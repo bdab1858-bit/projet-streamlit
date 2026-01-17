@@ -1,9 +1,10 @@
-import streamlit as st
+
+ import streamlit as st
 import pandas as pd
 from bd import get_connection
 
-# Role-based access control
-if st.session_state.get('user_role') != 'enseignant':
+# ================== ROLE CHECK ==================
+if st.session_state.get("user_role") != "enseignant":
     st.error("Accès refusé. Seuls les enseignants peuvent accéder à cette page.")
     st.stop()
 
@@ -13,6 +14,13 @@ st.set_page_config(
     page_icon="👨‍🏫",
     layout="wide"
 )
+
+# ================== HIDE SIDEBAR ==================
+st.markdown("""
+<style>
+[data-testid="stSidebar"] {display: none;}
+</style>
+""", unsafe_allow_html=True)
 
 # ================== STYLE ==================
 st.markdown("""
@@ -56,82 +64,79 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ================== HEADER ==================
-prof_id = st.session_state.get('user_id')
-st.markdown(f"""
+prof_id = st.session_state.get("user_id")
+
+st.markdown("""
 <div class="header">
     <h1>👨‍🏫 Espace Enseignant</h1>
-    <p>Gestion de vos examens et surveillances (ID: {prof_id})</p>
+    <p>Gestion de vos examens et surveillances</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Get professor info
+# ================== DATABASE ==================
 try:
     conn = get_connection()
     cur = conn.cursor()
-    
-    cur.execute("SELECT nom, prenom, id_dept FROM professeur WHERE id_prof = %s", (prof_id,))
-    prof_info = cur.fetchone()
-    
-    if prof_info:
-        nom, prenom, id_dept = prof_info
+
+    # ---------- Enseignant + Département + Chef ----------
+    cur.execute("""
+        SELECT 
+            p.nom AS prof_nom,
+            d.nom AS dept_nom,
+            cd.nom AS chef_nom
+        FROM professeur p
+        JOIN departement d ON p.id_dept = d.id_dept
+        LEFT JOIN professeur cd 
+            ON cd.id_dept = d.id_dept AND cd.role = 'chef_dept'
+        WHERE p.id_prof = %s
+    """, (prof_id,))
+
+    info = cur.fetchone()
+
+    if info:
+        prof_nom, dept_nom, chef_nom = info
+
         st.markdown(f"""
         <div class="info-box">
-            <b>Enseignant:</b> {prenom} {nom} | <b>Département ID:</b> {id_dept}
+            <b>Enseignant :</b> {prof_nom}<br>
+            <b>Département :</b> {dept_nom}<br>
+            <b>Chef de département :</b> {chef_nom if chef_nom else "Non défini"}
         </div>
         """, unsafe_allow_html=True)
-    
+
     # ================== KPI ==================
-    # Count exams for this professor
     cur.execute("SELECT COUNT(*) FROM examen WHERE id_prof = %s", (prof_id,))
     total_exams = cur.fetchone()[0]
-    
-    # Count modules taught by this professor
-    cur.execute("""
-        SELECT COUNT(DISTINCT m.id_module) 
-        FROM module m
-        WHERE m.id_form IN (SELECT id_form FROM formation WHERE id_dept = %s)
-    """, (id_dept,))
-    total_modules = cur.fetchone()[0]
-    
-    # Count surveillances
+
     cur.execute("SELECT COUNT(*) FROM surveillance WHERE id_prof = %s", (prof_id,))
-    total_surveil = cur.fetchone()[0]
-    
-    col1, col2, col3 = st.columns(3)
-    
+    total_surv = cur.fetchone()[0]
+
+    col1, col2 = st.columns(2)
+
     with col1:
-        st.markdown(f"""
-        <div class="card">
-            <h3>📚 Modules</h3>
-            <div class="kpi">{total_modules}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
         st.markdown(f"""
         <div class="card">
             <h3>📝 Examens</h3>
             <div class="kpi">{total_exams}</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    with col3:
+
+    with col2:
         st.markdown(f"""
         <div class="card">
             <h3>👁️ Surveillances</h3>
-            <div class="kpi">{total_surveil}</div>
+            <div class="kpi">{total_surv}</div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # ================== MY EXAMS ==================
+
+    # ================== MES EXAMENS ==================
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("📋 Mes Examens")
-    
+
     cur.execute("""
         SELECT 
-            e.id_examen,
-            m.nom AS module_name,
-            s.nom AS salle_name,
+            m.nom,
+            s.nom,
             c.date_exam,
             c.heure_debut,
             c.heure_fin
@@ -142,79 +147,32 @@ try:
         WHERE e.id_prof = %s
         ORDER BY c.date_exam, c.heure_debut
     """, (prof_id,))
-    
+
     exams = cur.fetchall()
+
     if exams:
-        exam_df = pd.DataFrame(exams, columns=['ID', 'Module', 'Salle', 'Date', 'Heure début', 'Heure fin'])
-        st.dataframe(exam_df, use_container_width=True)
+        df = pd.DataFrame(
+            exams,
+            columns=["Module", "Salle", "Date", "Heure début", "Heure fin"]
+        )
+        st.dataframe(df, use_container_width=True)
     else:
-        st.info("Aucun examen assigné pour le moment.")
-    
+        st.info("Aucun examen assigné.")
+
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ================== MY SURVEILLANCES ==================
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("👁️ Mes Surveillances")
-    
-    cur.execute("""
-        SELECT 
-            s.id_surv,
-            e.id_examen,
-            m.nom AS module_name,
-            c.date_exam,
-            c.heure_debut,
-            COUNT(i.id_etud) AS nb_students
-        FROM surveillance s
-        JOIN examen e ON s.id_examen = e.id_examen
-        JOIN module m ON e.id_module = m.id_module
-        JOIN creneau c ON e.id_creneau = c.id_creneau
-        LEFT JOIN inscription i ON i.id_module = e.id_module
-        WHERE s.id_prof = %s
-        GROUP BY s.id_surv, e.id_examen, m.nom, c.date_exam, c.heure_debut
-        ORDER BY c.date_exam, c.heure_debut
-    """, (prof_id,))
-    
-    surveillances = cur.fetchall()
-    if surveillances:
-        surv_df = pd.DataFrame(surveillances, columns=['ID', 'Exam ID', 'Module', 'Date', 'Heure', 'Nb Étudiants'])
-        st.dataframe(surv_df, use_container_width=True)
-    else:
-        st.info("Aucune surveillance assignée pour le moment.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ================== MODULES ==================
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("📚 Modules du Département")
-    
-    cur.execute("""
-        SELECT 
-            m.id_module,
-            m.nom,
-            f.nom AS formation,
-            COUNT(i.id_etud) AS nb_inscrits
-        FROM module m
-        JOIN formation f ON m.id_form = f.id_form
-        LEFT JOIN inscription i ON i.id_module = m.id_module
-        WHERE f.id_dept = %s
-        GROUP BY m.id_module, m.nom, f.nom
-        ORDER BY f.nom, m.nom
-    """, (id_dept,))
-    
-    modules = cur.fetchall()
-    if modules:
-        mod_df = pd.DataFrame(modules, columns=['Module ID', 'Module', 'Formation', 'Inscrits'])
-        st.dataframe(mod_df, use_container_width=True)
-    else:
-        st.info("Aucun module trouvé dans votre département.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
+
     cur.close()
     conn.close()
 
 except Exception as e:
-    st.error(f"Erreur lors du chargement des données: {e}")
+    st.error(f"Erreur : {e}")
+
+# ================== LOGOUT ==================
+st.divider()
+
+if st.button("🚪 Se déconnecter"):
+    st.session_state.clear()
+    st.switch_page("pages/login.py")
 
 # ================== FOOTER ==================
-st.caption("Projet universitaire — Interface Enseignant")
+st.caption("Projet universitaire — Interface Enseignant"
