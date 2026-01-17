@@ -1,17 +1,51 @@
 import streamlit as st
 import pandas as pd
+from bd import get_connection
 
-# Role-based access control
-if st.session_state.get('user_role') != 'chef_dept':
-    st.error("Accès refusé. Seuls les chefs de département peuvent accéder à cette page.")
-    st.stop()
-
-# ================== PAGE CONFIG ==================
+# ================== PAGE CONFIG (TOUJOURS EN PREMIER) ==================
 st.set_page_config(
     page_title="Chef de département",
     page_icon="🏫",
     layout="wide"
 )
+
+# ================== HIDE SIDEBAR ==================
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none;}
+</style>
+""", unsafe_allow_html=True)
+
+# ================== ROLE CHECK ==================
+if st.session_state.get('user_role') != 'chef_dept':
+    st.error("Accès refusé. Seuls les chefs de département peuvent accéder à cette page.")
+    st.stop()
+
+# ================== GET CHEF INFO ==================
+chef_id = st.session_state.get("user_id")
+
+try:
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT nom, specialite
+        FROM professeur
+        WHERE id_prof = %s
+    """, (chef_id,))
+    chef = cur.fetchone()
+
+    if chef:
+        nom_chef, specialite = chef
+    else:
+        nom_chef, specialite = "Inconnu", "Inconnue"
+
+    cur.close()
+    conn.close()
+
+except Exception as e:
+    st.error(f"Erreur base de données : {e}")
+    st.stop()
 
 # ================== STYLE ==================
 st.markdown("""
@@ -47,10 +81,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ================== HEADER ==================
-st.markdown("""
+st.markdown(f"""
 <div class="header">
     <h1>🏫 Chef de département</h1>
-    <p>Gestion et validation des examens du département</p>
+    <p><b>{nom_chef}</b> — {specialite}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -109,6 +143,18 @@ with col2:
 
 st.info("Les validations seront enregistrées après connexion à la base de données.")
 st.markdown('</div>', unsafe_allow_html=True)
+st.divider()
+
+if st.button("🚪 Se déconnecter"):
+    # Clear session
+    st.session_state.user_role = None
+    st.session_state.user_id = None
+
+    # Optional: clear all session state
+    st.session_state.clear()
+
+    # Redirect to login page
+    st.switch_page("pages/login.py")
 
 # ================== FOOTER ==================
 st.caption("Projet universitaire — Interface Chef de département")
