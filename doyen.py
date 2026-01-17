@@ -1,60 +1,54 @@
 import streamlit as st
 import pandas as pd
+from bd import get_connection
+
+# 🚫 Hide sidebar
+st.markdown("""
+<style>
+[data-testid="stSidebar"] {display: none;}
+</style>
+""", unsafe_allow_html=True)
 
 # Role-based access control
 if st.session_state.get('user_role') != 'doyen':
-    st.error("Accès refusé. Seuls les doyens peuvent accéder à cette page.")
+    st.error("Accès refusé.")
     st.stop()
 
-# ================== PAGE CONFIG ==================
 st.set_page_config(
-    page_title="Doyen | Examens",
+    page_title="Doyen",
     page_icon="📊",
     layout="wide"
 )
 
-# ================== STYLE ==================
-st.markdown("""
-<style>
-.stApp {
-    background-color: #F1F4F9;
-    font-family: 'Segoe UI', sans-serif;
-}
+# 🔹 Récupérer le nom du doyen
+conn = get_connection()
+cur = conn.cursor()
 
-.card {
-    background-color: white;
-    padding: 25px;
-    border-radius: 16px;
-    box-shadow: 0px 10px 25px rgba(0,0,0,0.08);
-    border-left: 6px solid #5B9DFF;
-    margin-bottom: 20px;
-}
+cur.execute(
+    "SELECT nom FROM professeur WHERE id_prof = %s",
+    (st.session_state.get("user_id"),)
+)
+row = cur.fetchone()
+cur.close()
+conn.close()
 
-.header {
-    background: linear-gradient(90deg, #5B9DFF, #6EC6FF);
-    padding: 30px;
-    border-radius: 20px;
-    color: white;
-    margin-bottom: 30px;
-}
-
-.kpi {
-    font-size: 36px;
-    font-weight: bold;
-    color: #5B9DFF;
-}
-</style>
-""", unsafe_allow_html=True)
+doyen_nom = row[0] if row else "Doyen"
 
 # ================== HEADER ==================
-st.markdown("""
-<div class="header">
+st.markdown(f"""
+<div style="
+background: linear-gradient(90deg, #5B9DFF, #6EC6FF);
+padding: 30px;
+border-radius: 20px;
+color: white;
+margin-bottom: 30px;">
     <h1>📊 Doyen / Vice‑Doyen</h1>
-    <p>Vue globale et supervision des emplois du temps d’examens</p>
+    <p><b>{doyen_nom}</b></p>
 </div>
 """, unsafe_allow_html=True)
 
-# ================== KPI CARDS ==================
+
+# ================== KPI ==================
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -81,7 +75,7 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-# ================== DATA VISUALIZATION ==================
+# ================== DATA ==================
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("📊 Examens par département")
 
@@ -93,20 +87,27 @@ df = pd.DataFrame({
 st.bar_chart(df.set_index("Département"))
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ================== DECISION ACTIONS ==================
+# ================== ACTIONS ==================
 st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("✅ Décisions")
 
-col1, col2 = st.columns(2)
-
-with col1:
+c1, c2 = st.columns(2)
+with c1:
     st.button("✔️ Valider le planning global")
-
-with col2:
+with c2:
     st.button("📄 Exporter le planning (PDF)")
 
 st.info("Les actions seront effectives après connexion à la base de données.")
 st.markdown('</div>', unsafe_allow_html=True)
+if st.button("🚪 Se déconnecter"):
+    # Clear session
+    st.session_state.user_role = None
+    st.session_state.user_id = None
 
+    # Optional: clear all session state
+    st.session_state.clear()
+
+    # Redirect to login page
+    st.switch_page("pages/login.py")
 # ================== FOOTER ==================
-st.caption("Projet universitaire — Tableau de bord décisionnel du Doyen")
+st.caption("Projet universitaire — Interface décisionnelle du Doyen")
