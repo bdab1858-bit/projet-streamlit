@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from algorithme import generate_exam_schedule, persist_schedule_to_db
+from algorithm import generate_exam_schedule, persist_schedule_to_db
 from db_queries import (
     count_examens,
     count_salles,
@@ -150,4 +150,4 @@ if st.button("🚪 Se déconnecter"):
     st.switch_page("pages/login.py")
 
 # ================== FOOTER ==================
-st.caption("Projet universitaire — Génération automatique des examens")
+st.caption("Projet universitaire — Génération automatique des examens"
